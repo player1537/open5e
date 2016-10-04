@@ -1,0 +1,28 @@
+{
+  "name": "open5e",
+  "version": "0.0.0",
+  "description": "An SRD and open-source material reference site for 5th edition D&D",
+  "main": "index.js",
+  "dependencies": {
+    "restructured": "0.0.7"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "extract-json": "node utils/to-data-json.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/eepMoody/open5e.git"
+  },
+  "keywords": [
+    "dnd",
+    "5e",
+    "srd"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/eepMoody/open5e/issues"
+  },
+  "homepage": "https://github.com/eepMoody/open5e#readme"
+}

@@ -5,6 +5,7 @@
 # MAKE SURE YOU ALSO CHANGE THEM IN .travis.yml!
 
 # You can set these variables from the command line.
+NPM           = npm
 SPHINXOPTS    = -c . -j 4 -n
 SPHINXBUILD  ?= sphinx-build
 PAPER         =
@@ -86,6 +87,10 @@ json:
 	$(SPHINXBUILD) -b json $(ALLSPHINXOPTS) $(BUILDDIR)/json
 	@echo
 	@echo "Build finished; now you can process the JSON files."
+
+.PHONY: datajson
+datajson:
+	$(NPM) run extract-json
 
 .PHONY: htmlhelp
 htmlhelp:

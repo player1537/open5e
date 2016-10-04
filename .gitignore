@@ -22,7 +22,7 @@ publish
 
 # node stuff
 
-_themes/node_modules/
+node_modules
 *.scssc
 *.sassc
 _themes/bower_components/*
