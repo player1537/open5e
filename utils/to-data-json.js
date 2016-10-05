@@ -125,6 +125,25 @@ function parseSpellFile(filePath) {
 
         spell.components = components;
       }
+      
+      if (spell.description) {
+        let damageTypes = [];
+        let damageRolls = [];
+        let arrMatch = null;
+        const damageValues = ['bludgeoning', 'piercing', 'slashing','fire','cold','psychic','poison','necrotic','radiant']
+        const rePattern = /(\d+d\d+\+?\d?)?\s(\w+)\sdamage/ig;
+        while (arrMatch = rePattern.exec(spell.description)){
+          //if it is a type of damage and isn't in the results array already
+          if (damageValues.indexOf(arrMatch[2]) > -1 && damageTypes.indexOf(arrMatch[2]) <= -1){
+            damageTypes.push(arrMatch[2]);
+          }
+          if (arrMatch[1]){
+            damageRolls.push(arrMatch[1]+" "+arrMatch[2])
+          }
+        }
+        spell.damageTypes = damageTypes;
+        spell.damageRolls = damageRolls;
+      }
 
       return spell;
 
