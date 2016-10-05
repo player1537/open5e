@@ -107,6 +107,13 @@ function parseSpellFile(filePath) {
             throw new Error(`Unsupported section child type: ${child.type}`);
         }
       });
+      
+      if (spell.duration){
+        spell.concentration =  !! spell.duration.match(/Concentration, /)
+        if (spell.concentration){
+          spell.duration = spell.duration.slice(15);
+        }
+      }
 
       if (spell.components) {
         const M = spell.components.match(/M(?: \((.*)\))?$/);
