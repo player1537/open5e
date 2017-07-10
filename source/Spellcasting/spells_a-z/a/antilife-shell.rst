@@ -11,6 +11,8 @@ Antilife Shell
 
 **Range:** self (10 foot radius) Components: V, S
 
+**Components:** V, S
+
 **Duration:** Concentration, up to 1 hour
 
 A shimmering barrier extends out from you in a 10 foot radius and moves
