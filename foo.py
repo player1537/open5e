@@ -1,11 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3.6
 """
 
 """
-
-from __future__ import print_function
 
 from contextlib import contextmanager
+import json
+import os
+from pathlib import Path
 
 from docutils.frontend import OptionParser
 from docutils.parsers.rst import Parser
@@ -13,6 +14,36 @@ from docutils.nodes import (
     GenericNodeVisitor, NodeVisitor, SkipChildren,
 )
 from docutils.utils import new_document
+
+
+class DelegatingJSONEncoder(json.JSONEncoder):
+    """
+    Some of our objects aren't inherently JSON-encodable, such as numpy arrays
+    or custom classes (e.g. :class:`Unit`). This encoder allows a magic
+    ``__json__`` method to be defined on the class that returns a
+    JSON-encodable object.
+
+    """
+    def default(self, o):
+        if hasattr(o, '__json__'):
+            return o.__json__()
+
+        return super(DelegatingJSONEncoder, self).default(o)
+
+
+class SimpleJSON(object):
+    """
+    This base class provides a default ``__json__`` method to be used by
+    :class:`DelegatingJSONEncoder` as well as a convenience method to convert
+    the object to JSON using that encoder.
+
+    """
+    def __json__(self):
+        return self.__dict__
+
+    def tojson(self, *args, **kwargs):
+        """Convert this object to a JSON string"""
+        return DelegatingJSONEncoder(*args, **kwargs).encode(self)
 
 
 class NodeVisitorProxy(NodeVisitor, object):
@@ -47,7 +78,7 @@ class NodeVisitorProxy(NodeVisitor, object):
             return ret
 
 
-class Content(object):
+class Content(SimpleJSON):
     pass
 
 
@@ -57,6 +88,15 @@ class ContentParagraph(Content):
 
     def __repr__(self):
         return '{!r}'.format(self.text)
+
+    def __json__(self):
+        return {
+            'tag': 'p',
+            'props': {},
+            'children': [
+                self.text.replace('\n', ' '),
+            ],
+        }
 
 
 class ContentHeading(Content):
@@ -68,6 +108,15 @@ class ContentHeading(Content):
             self.text,
         )
 
+    def __json__(self):
+        return {
+            'tag': 'h1',
+            'props': {},
+            'children': [
+                self.text.replace('\n', ' '),
+            ],
+        }
+
 
 class ContentListItem(Content):
     def __init__(self, text):
@@ -75,6 +124,21 @@ class ContentListItem(Content):
 
     def __repr__(self):
         return '* {!r}'.format(self.text)
+
+    def __json__(self):
+        return {
+            'tag': 'ul',
+            'props': {},
+            'children': [
+                {
+                    'tag': 'li',
+                    'props': {},
+                    'children': [
+                        self.text.replace('\n', ' '),
+                    ],
+                },
+            ],
+        }
 
 
 class ContentTable(Content):
@@ -85,42 +149,17 @@ class ContentTable(Content):
     def __repr__(self):
         return 'Table: {!r}'.format(self.heading)
 
+    def __json__(self):
+        return {
+            'tag': 'p',
+            'props': {},
+            'children': [
+                'table not supported, sorry!',
+            ],
+        }
 
-class Spell(object):
-    """
-    <document source="./source/Spellcasting/spells_a-z/a/acid-splash.rst">
-        <target ids="srd-acid-splash" names="srd:acid-splash">
-        <section ids="acid-splash" names="acid\ splash">
-            <title>
-                Acid Splash
-            <section ids="conjuration-cantrip" names="conjuration\ cantrip">
-                <title>
-                    Conjuration cantrip
-                <paragraph>
-                    <strong>
-                        Casting Time:
-                     1 action
-                <paragraph>
-                    <strong>
-                        Range:
-                     60 feet
-                <paragraph>
-                    <strong>
-                        Components:
-                     V, S
-                <paragraph>
-                    <strong>
-                        Duration:
-                     Instantaneous
-                <paragraph>
-                    You hurl a bubble of acid. Choose one creature within range, or choose
-                    two creatures within range that are within 5 feet of each other. A
-                    target must succeed on a Dexterity saving throw or take 1d6 acid damage.
-                <paragraph>
-                    This spell's damage increases by 1d6 when you reach 5th level (2d6),
-                    11th level (3d6), and 17th level (4d6).
-    """
 
+class Spell(SimpleJSON):
     def __init__(self):
         self.source = None
         self.id = None
@@ -132,12 +171,28 @@ class Spell(object):
         self.duration = None
         self.content = []
 
+    def __json__(self):
+        return {
+            'type': 'spell',
+            'source': self.source,
+            'id': self.id,
+            'name': self.name,
+            'attributes': {
+                'type': self.type,
+                'casting_time': self.casting_time,
+                'range': self.range,
+                'components': self.components,
+                'duration': self.duration,
+            },
+            'content': self.content,
+        }
+
     def __repr__(self):
         return '{}(\n  {}\n)'.format(
             self.__class__.__name__,
             ',\n  '.join((
                 '{}={!r}'.format(k, v)
-                for k, v in self.__dict__.iteritems()
+                for k, v in self.__dict__.items()
             )),
         )
 
@@ -367,22 +422,63 @@ class SpellTableVisitor(SpellVisitor):
 
 def parse_document(input_filename):
     with open(input_filename, 'r') as f:
-        default_settings = OptionParser(
+        option_parser = OptionParser(
             components=(Parser,),
-        ).get_default_values()
+        )
 
-        document = new_document(input_filename, default_settings)
+        default_settings = option_parser.get_default_values()
+
+        settings = default_settings.copy()
+        settings.update({
+            'report_level': 100,
+        }, option_parser)
+
+        document = new_document(input_filename, settings)
         parser = Parser()
         parser.parse(f.read(), document)
 
         return document
 
 
-def main(input_filename):
-    document = parse_document(input_filename)
-    print(document.pformat())
-    spell = Spell.parse(document)
-    print(spell)
+def full_paths(root_directory):
+    for root, dirs, files in os.walk(root_directory):
+        root = Path(root)
+
+        for path in files:
+            path = root / path
+
+            yield path
+
+
+def parse_all_spells(root_directory):
+    for path in full_paths(root_directory):
+        if not str(path).startswith('source/Spellcasting/spells_a-z/'):
+            continue
+
+        if path.name == 'index.rst':
+            continue
+
+        try:
+            yield Spell.parse(parse_document(path))
+        except NotImplementedError:
+            pass
+        except AssertionError:
+            pass
+
+
+def main(input_filename, debug=False, find_all=False):
+    if find_all:
+        all_spells = list(parse_all_spells(input_filename))
+        encoder = DelegatingJSONEncoder(indent=2)
+        print(encoder.encode(all_spells))
+
+    else:
+        document = parse_document(input_filename)
+        if debug:
+            print(document.pformat())
+
+        spell = Spell.parse(document)
+        print(spell.tojson(indent=2))
 
 
 if __name__ == "__main__":
@@ -390,6 +486,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('input_filename')
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--find-all', action='store_true')
     args = parser.parse_args()
 
     main(**vars(args))
