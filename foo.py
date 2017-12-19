@@ -99,18 +99,18 @@ class ContentParagraph(Content):
         }
 
 
-class ContentHeading(Content):
+class ContentStrong(Content):
     def __init__(self, text):
         self.text = text
 
     def __repr__(self):
-        return 'Heading: {!r}'.format(
+        return 'Strong: {!r}'.format(
             self.text,
         )
 
     def __json__(self):
         return {
-            'tag': 'h1',
+            'tag': 'strong',
             'props': {},
             'children': [
                 self.text.replace('\n', ' '),
@@ -340,7 +340,7 @@ class SpellContentVisitor(SpellVisitor):
         pass
 
     def visit_strong(self, node):
-        return SpellHeadingVisitor
+        return SpellStrongVisitor
 
     def visit_Text(self, node):
         self.spell.content.append(ContentParagraph(
@@ -349,9 +349,9 @@ class SpellContentVisitor(SpellVisitor):
         return SpellContentVisitor
 
 
-def SpellHeadingVisitor(SpellVisitor):
+class SpellStrongVisitor(SpellVisitor):
     def visit_Text(self, node):
-        self.spell.content.append(ContentHeading(
+        self.spell.content.append(ContentStrong(
             node.astext().strip(),
         ))
 
@@ -420,6 +420,88 @@ class SpellTableVisitor(SpellVisitor):
         return SpellContentVisitor
 
 
+class Class(SimpleJSON):
+    def __init__(self):
+        pass
+
+    def __json__(self):
+        return {
+        }
+
+    def __repr__(self):
+        return '{}(\n  {}\n)'.format(
+            self.__class__.__name__,
+            ',\n  '.join((
+                '{}={!r}'.format(k, v)
+                for k, v in self.__dict__.items()
+            )),
+        )
+
+    @classmethod
+    def parse(cls, document):
+        clazz = cls()
+        visitor = NodeVisitorProxy(ClassSourceVisitor, document, clazz=clazz)
+        document.walkabout(visitor)
+
+        return clazz
+
+
+class ClassVisitor(GenericNodeVisitor, object):
+    def __init__(self, document, clazz):
+        self.document = document
+        self.clazz = clazz
+
+    def visit_problematic(self, node):
+        raise SkipChildren
+
+    def visit_system_message(self, node):
+        raise SkipChildren
+
+    def default_visit(self, node):
+        raise NotImplementedError('{}.visit_{}'.format(
+            self.__class__.__name__,
+            node.__class__.__name__,
+        ))
+
+    def default_departure(self, node):
+        pass
+
+
+class ClassSourceVisitor(ClassVisitor):
+    def visit_document(self, node):
+        self.clazz.source = node.attributes['source']
+        return ClassIdVisitor
+
+
+class ClassIdVisitor(ClassVisitor):
+    def visit_target(self, node):
+        self.clazz.id = node.attributes['names'][0]
+
+    def visit_section(self, node):
+        return ClassNameVisitor
+
+
+class ClassNameVisitor(ClassVisitor):
+    def visit_title(self, node):
+        pass
+
+    def visit_Text(self, node):
+        self.clazz.name = node.astext()
+
+    def depart_Text(self, node):
+        return ClassFeaturesVisitor
+
+
+class ClassFeaturesVisitor(ClassVisitor):
+    def visit_section(self, node):
+        assert node.attributes['ids'][0] == 'class-features', \
+            node.attributes['ids'][0]
+
+    def visit_paragraph(self, node):
+        pass
+
+
+
 def parse_document(input_filename):
     with open(input_filename, 'r') as f:
         option_parser = OptionParser(
@@ -466,7 +548,7 @@ def parse_all_spells(root_directory):
             pass
 
 
-def main(input_filename, debug=False, find_all=False):
+def main_spell(input_filename, debug=False, find_all=False):
     if find_all:
         all_spells = list(parse_all_spells(input_filename))
         encoder = DelegatingJSONEncoder(indent=2)
@@ -481,13 +563,31 @@ def main(input_filename, debug=False, find_all=False):
         print(spell.tojson(indent=2))
 
 
+def main_class(input_filename, debug=False, find_all=False):
+    document = parse_document(input_filename)
+    if debug:
+        print(document.pformat())
+
+    clazz = Class.parse(document)
+    print(clazz.tojson(indent=2))
+
+
 if __name__ == "__main__":
     import argparse
+
+    mains = {
+        'spell': main_spell,
+        'class': main_class,
+    }
 
     parser = argparse.ArgumentParser()
     parser.add_argument('input_filename')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--find-all', action='store_true')
+    parser.add_argument('--type', choices=mains, default='spell')
     args = parser.parse_args()
+
+    args_dict = vars(args)
+    main = mains[args_dict.pop('type')]
 
     main(**vars(args))
